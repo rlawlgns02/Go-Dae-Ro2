@@ -1,4 +1,4 @@
-// GO대로 - AR Photo Guide App
+// GO?濡?- AR Photo Guide App
 // Perfect Frame Implementation
 
 class MomentieApp {
@@ -419,7 +419,7 @@ class MomentieApp {
             };
         } catch (error) {
             console.error('Camera access error:', error);
-            alert('카메라에 접근할 수 없습니다. 권한을 확인해주세요.');
+            alert('移대찓?쇱뿉 ?묎렐?????놁뒿?덈떎. 沅뚰븳???뺤씤?댁＜?몄슂.');
         }
     }
 
@@ -585,7 +585,7 @@ class MomentieApp {
     // Flash Functions
     async toggleFlash() {
         if (!this.state.flashSupported) {
-            this.showAlignmentFeedback('이 기기에서는 플래시를 지원하지 않습니다', false);
+            this.showAlignmentFeedback('??湲곌린?먯꽌???뚮옒?쒕? 吏?먰븯吏 ?딆뒿?덈떎', false);
             setTimeout(() => this.hideAlignmentFeedback(), 2000);
             return;
         }
@@ -803,54 +803,124 @@ class MomentieApp {
             return;
         }
 
+        // Get key body points for bounding box
+        const nose = landmarks[0];
         const leftShoulder = landmarks[11];
         const rightShoulder = landmarks[12];
+        const leftHip = landmarks[23];
+        const rightHip = landmarks[24];
+        const leftAnkle = landmarks[27];
+        const rightAnkle = landmarks[28];
 
+        // Check if person is detected
         if (leftShoulder.visibility < 0.5 || rightShoulder.visibility < 0.5) {
-            this.showAlignmentFeedback('사람을 프레임 안에 위치시켜주세요', false);
+            this.showAlignmentFeedback('?щ엺???꾨젅???덉뿉 ?꾩튂?쒖폒二쇱꽭??, 'none');
             return;
         }
 
-        const centerX = (leftShoulder.x + rightShoulder.x) / 2;
-        const centerY = (leftShoulder.y + rightShoulder.y) / 2;
+        // Calculate person's bounding box (normalized 0-1)
+        const visiblePoints = [nose, leftShoulder, rightShoulder, leftHip, rightHip, leftAnkle, rightAnkle]
+            .filter(p => p && p.visibility > 0.3);
 
-        // Compare with guide position
+        if (visiblePoints.length < 3) {
+            this.showAlignmentFeedback('?щ엺???꾨젅???덉뿉 ?꾩튂?쒖폒二쇱꽭??, 'none');
+            return;
+        }
+
+        const personLeft = Math.min(...visiblePoints.map(p => p.x));
+        const personRight = Math.max(...visiblePoints.map(p => p.x));
+        const personTop = Math.min(...visiblePoints.map(p => p.y));
+        const personBottom = Math.max(...visiblePoints.map(p => p.y));
+
+        const personCenterX = (personLeft + personRight) / 2;
+        const personCenterY = (personTop + personBottom) / 2;
+        const personWidth = personRight - personLeft;
+        const personHeight = personBottom - personTop;
+
+        // Get guide position and size (normalized)
         const guideX = this.state.guidePosition.x / 100;
         const guideY = this.state.guidePosition.y / 100;
 
-        const isHorizontallyAligned = Math.abs(centerX - guideX) < 0.1;
+        // Estimate guide size based on container
+        const container = document.querySelector('.camera-container');
+        if (!container) return;
+
+        const containerRect = container.getBoundingClientRect();
+        const defaultSize = this.defaultGuideSizes[this.state.currentGuide];
+        const guideWidth = (defaultSize.width * this.state.guideScale) / containerRect.width;
+        const guideHeight = (defaultSize.height * this.state.guideScale) / containerRect.height;
+
+        const guideLeft = guideX - guideWidth / 2;
+        const guideRight = guideX + guideWidth / 2;
+        const guideTop = guideY - guideHeight / 2;
+        const guideBottom = guideY + guideHeight / 2;
+
+        // Check overlap between person and guide
+        const overlapLeft = Math.max(personLeft, guideLeft);
+        const overlapRight = Math.min(personRight, guideRight);
+        const overlapTop = Math.max(personTop, guideTop);
+        const overlapBottom = Math.min(personBottom, guideBottom);
+
+        const overlapWidth = Math.max(0, overlapRight - overlapLeft);
+        const overlapHeight = Math.max(0, overlapBottom - overlapTop);
+        const overlapArea = overlapWidth * overlapHeight;
+        const personArea = personWidth * personHeight;
+
+        const overlapRatio = personArea > 0 ? overlapArea / personArea : 0;
+
+        // Check alignment
+        const horizontalDiff = Math.abs(personCenterX - guideX);
+        const verticalDiff = Math.abs(personCenterY - guideY);
         const shoulderDiff = Math.abs(leftShoulder.y - rightShoulder.y);
         const isLevel = shoulderDiff < 0.03;
 
-        const isVerticallyAligned = Math.abs(centerY - guideY) < 0.15;
-
-        if (isHorizontallyAligned && isVerticallyAligned && isLevel) {
-            this.showAlignmentFeedback('완벽해요!', true);
-        } else if (!isLevel) {
-            this.showAlignmentFeedback('카메라를 수평으로 맞춰주세요', false);
-        } else if (!isHorizontallyAligned) {
-            const direction = centerX < guideX ? '오른쪽' : '왼쪽';
-            this.showAlignmentFeedback(`${direction}으로 조금 이동해주세요`, false);
-        } else if (!isVerticallyAligned) {
-            const direction = centerY < guideY ? '아래' : '위';
-            this.showAlignmentFeedback(`${direction}로 이동해주세요`, false);
+        // Determine state based on overlap and alignment
+        if (overlapRatio > 0.6 && horizontalDiff < 0.08 && verticalDiff < 0.1 && isLevel) {
+            // Perfect alignment
+            this.showAlignmentFeedback('?꾨꼍?댁슂! 吏湲?李띿쑝?몄슂!', 'perfect');
+        } else if (overlapRatio > 0.3) {
+            // Partial overlap - person is in guide area
+            if (!isLevel) {
+                this.showAlignmentFeedback('移대찓?쇰? ?섑룊?쇰줈 留욎떠二쇱꽭??, 'partial');
+            } else if (horizontalDiff > 0.08) {
+                const direction = personCenterX < guideX ? '?ㅻⅨ履? : '?쇱そ';
+                this.showAlignmentFeedback(`${direction}?쇰줈 議곌툑 ?대룞?댁＜?몄슂`, 'partial');
+            } else if (verticalDiff > 0.1) {
+                const direction = personCenterY < guideY ? '?꾨옒' : '??;
+                this.showAlignmentFeedback(`${direction}濡??대룞?댁＜?몄슂`, 'partial');
+            } else {
+                this.showAlignmentFeedback('議곌툑留???留욎떠二쇱꽭??, 'partial');
+            }
+        } else if (overlapRatio > 0) {
+            // Person detected but not well aligned
+            this.showAlignmentFeedback('媛?대뱶 ?덉쑝濡??ㅼ뼱?二쇱꽭??, 'detected');
+        } else {
+            // No overlap
+            this.showAlignmentFeedback('媛?대뱶 ?덉쑝濡??대룞?댁＜?몄슂', 'detected');
         }
     }
 
-    showAlignmentFeedback(message, isAligned) {
+    showAlignmentFeedback(message, state) {
         this.elements.feedbackText.textContent = message;
         this.elements.alignmentFeedback.classList.add('visible');
-        this.elements.alignmentFeedback.classList.toggle('aligned', isAligned);
+        this.elements.alignmentFeedback.classList.toggle('aligned', state === 'perfect');
+
+        // Remove all state classes first
+        this.elements.guideFrame.classList.remove('perfect', 'partial', 'detected');
+
+        // Add current state class
+        if (state !== 'none') {
+            this.elements.guideFrame.classList.add(state);
+        }
 
         // Show/hide perfect alignment indicators
-        this.elements.guideFrame.classList.toggle('perfect', isAligned);
-        this.elements.captureBtn.classList.toggle('ready', isAligned);
-        this.elements.shootIndicator.classList.toggle('visible', isAligned);
+        this.elements.captureBtn.classList.toggle('ready', state === 'perfect');
+        this.elements.shootIndicator.classList.toggle('visible', state === 'perfect');
     }
 
     hideAlignmentFeedback() {
         this.elements.alignmentFeedback.classList.remove('visible', 'aligned');
-        this.elements.guideFrame.classList.remove('perfect');
+        this.elements.guideFrame.classList.remove('perfect', 'partial', 'detected');
         this.elements.captureBtn.classList.remove('ready');
         this.elements.shootIndicator.classList.remove('visible');
     }
@@ -1104,7 +1174,7 @@ class MomentieApp {
         this.showScreen('preview');
 
         const saveBtn = document.getElementById('save-btn');
-        saveBtn.textContent = '다운로드';
+        saveBtn.textContent = '?ㅼ슫濡쒕뱶';
         saveBtn.onclick = () => {
             const link = document.createElement('a');
             link.download = `godaero_${photo.id}.jpg`;
@@ -1113,7 +1183,7 @@ class MomentieApp {
         };
 
         document.getElementById('retake-btn').onclick = () => {
-            saveBtn.textContent = '저장';
+            saveBtn.textContent = '???;
             saveBtn.onclick = () => this.savePhoto();
             this.showScreen('gallery');
         };
